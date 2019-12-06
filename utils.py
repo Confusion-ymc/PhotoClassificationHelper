@@ -1,6 +1,8 @@
 import datetime
 import hashlib
 import os
+import re
+import traceback
 import shutil
 
 import exifread
@@ -9,7 +11,8 @@ from GPSPhoto import gpsphoto
 
 
 class ImageInfo:
-    def __init__(self, file_path):
+    def __init__(self, file_path, use_modify_time):
+        self.use_modify_time = use_modify_time
         self.path = file_path
         self.photo_name = os.path.split(file_path)[-1]
         self.modify_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path)).strftime('%Y%m')
@@ -28,7 +31,8 @@ class ImageInfo:
                 m.update(line)
         md5code = m.hexdigest()
         raw_time = tags.get('EXIF DateTimeOriginal')
-        self.create_time = str(raw_time).split(' ')[0].replace(':', '')[:6] if raw_time else '未知时间'
+        self.create_time = str(raw_time).split(' ')[0].replace(':', '')[:6] if raw_time else (
+            self.modify_time if self.use_modify_time else '未知时间')
         self.md5_code = md5code
         return md5code, self.create_time, self.photo_name
 
@@ -50,18 +54,23 @@ class FolderUtils:
     def __init__(self, from_root_path, to_root_path):
         self.dir_map = {}
         self.md5_dic = {}
+        self.the_same_file = []
         self.photo_count = 0
         self.from_root_path = from_root_path
         self.to_root_path = to_root_path
 
     @staticmethod
     def move_file(file_path, new_file_path):
-        shutil.copyfile(file_path, new_file_path)  # 复制文件
-        shutil.copystat(file_path, new_file_path)  # 复制信息
-        if 'None' in new_file_path:
-            print()
-        print("copy %s -> %s" % (file_path, new_file_path))
-        return "copy %s -> %s" % (file_path, new_file_path)
+        try:
+            shutil.copyfile(file_path, new_file_path)  # 复制文件
+            shutil.copystat(file_path, new_file_path)  # 复制信息
+            if 'None' in new_file_path:
+                print()
+            print("copy %s -> %s" % (file_path, new_file_path))
+            return "copy %s -> %s" % (file_path, new_file_path)
+        except:
+            print('处理失败：copy %s -> %s' % (file_path, new_file_path))
+            print(traceback.format_exc())
 
     @staticmethod
     def scan_folder(folder_path):
@@ -75,15 +84,34 @@ class FolderUtils:
                 # 如果是目录，则递归调用该函数
                 FolderUtils.scan_folder(sub_dir)
 
-    def count_for_detail_photos(self):
-        for i in self.scan_folder(self.from_root_path):
-            self.photo_count += 1
-        for file_path_ in self.scan_folder(self.to_root_path):
-            file_md5, folder_by_date, photo_name = ImageInfo(file_path_).read_info()
-            # 统计目标文件夹已经存在的图片信息
-            if file_md5 not in self.md5_dic:
-                self.md5_dic[file_md5] = [folder_by_date, photo_name]
-        return self.photo_count
+    def count_for_deal_with_photos(self):
+        for i in self.scan_folder(self.from_root_path): self.photo_count += 1
+
+    def add_photo_info_to_md5(self, folder_by_date_path, img_obj: ImageInfo):
+        if img_obj.md5_code not in self.md5_dic:
+            self.md5_dic[img_obj.md5_code] = [folder_by_date_path, img_obj.photo_name]
+        else:
+            self.the_same_file.append([img_obj.path, img_obj.md5_code])
+
+    def scan_exist_photos(self, use_modify_time):
+        # 统计目标文件夹已经存在的图片信息
+        exist_folders = []
+        pattern = re.compile(r'^[0-9]{6}.*?')
+        for file_path, sub_dirs, filenames in os.walk(self.to_root_path):
+            for folder_ in sub_dirs:
+                if str(folder_).endswith('-'):
+                    continue
+                result = pattern.findall(folder_)
+                if not result:
+                    continue
+                else:
+                    self.dir_map[result[0]] = os.path.join(self.to_root_path, folder_)
+                    exist_folders.append(self.dir_map[result[0]])
+                    for photo_path in self.scan_folder(self.dir_map[result[0]]):
+                        new_image = ImageInfo(photo_path, use_modify_time)
+                        new_image.read_info()
+                        self.add_photo_info_to_md5(os.path.split(os.path.dirname(photo_path))[-1].split('-')[0],
+                                                   new_image)
 
     @staticmethod
     def is_empty_dir(dir_path):

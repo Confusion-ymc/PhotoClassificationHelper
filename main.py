@@ -13,45 +13,42 @@ def loading(finish, count):
 
 
 def thread_t(folder_helper: FolderUtils):
-    the_same_file = []
-    file_count = folder_helper.count_for_detail_photos()
+    # 扫描需要处理的文件
+    use_modify_time = use_modify_time_check_var.get()
+    folder_helper.count_for_deal_with_photos()
+    folder_helper.scan_exist_photos(use_modify_time)
+    file_count = folder_helper.photo_count
     finish = 0
 
     for file_path_ in folder_helper.scan_folder(folder_helper.from_root_path):
         finish += 1
-        new_image = ImageInfo(file_path_)
+        new_image = ImageInfo(file_path_, use_modify_time)
         file_md5, folder_id_by_date, photo_name = new_image.read_info()
         if file_md5 not in folder_helper.md5_dic:
-            # 如果读取到日期信息
-            folder_by_date = folder_id_by_date
-            if folder_by_date == '未知时间' and use_modify_time_check_var.get():
-                # 如果用户选择了使用文件创建时间
-                folder_by_date = new_image.modify_time
             # 创建文件夹
             FolderUtils.mkdir(
-                os.path.join(folder_helper.to_root_path, folder_helper.dir_map.get(folder_by_date, folder_by_date)))
+                os.path.join(folder_helper.to_root_path, folder_helper.dir_map.get(folder_id_by_date, folder_id_by_date)))
             if use_location_folder_name_var.get():
                 # 根据city重命名文件夹
                 address, city = new_image.get_position_by_api()
-                folder_helper.rename_dir_by_city(folder_by_date, city)
+                folder_helper.rename_dir_by_city(folder_id_by_date, city)
             else:
-                folder_helper.dir_map[folder_by_date] = folder_by_date
+                folder_helper.dir_map[folder_id_by_date] = folder_id_by_date
             # 开始移动文件夹
-            new_file_path = os.path.join(folder_helper.to_root_path, folder_helper.dir_map[folder_by_date], photo_name)
+            new_file_path = os.path.join(folder_helper.to_root_path, folder_helper.dir_map[folder_id_by_date], photo_name)
             # 移动文件并显示信息
             set_status_text(FolderUtils.move_file(file_path_, new_file_path))
-            folder_helper.md5_dic[file_md5] = [folder_by_date, photo_name]
         else:
-            the_same_file.append([file_path_, file_md5])
-            msg = '跳过: {}, 存在文件:{}(文件夹名字可能已被修改)'.format(file_path_, os.path.join(folder_helper.to_root_path,
-                                                                                 folder_helper.md5_dic[file_md5][0],
-                                                                                 photo_name))
+            msg = '处理:{} '.format(file_path_)
+            # os.path.join(folder_helper.to_root_path,folder_helper.md5_dic[file_md5][0],photo_name)
             print(msg)
             set_status_text(msg)
+        folder_helper.add_photo_info_to_md5(folder_id_by_date, new_image)
         loading(finish, file_count)
+
     print('找到的相同的文件:')
 
-    for i in the_same_file:
+    for i in folder_helper.the_same_file:
         folder_id_by_date, photo_name = folder_helper.md5_dic[i[1]]
         exist_file_path = os.path.join(folder_helper.to_root_path, folder_helper.dir_map[folder_id_by_date], photo_name)
         msg = '相同文件: {}  =====>  {}'.format(i[0], exist_file_path)
@@ -68,9 +65,9 @@ def thread_t(folder_helper: FolderUtils):
 def run(from_folder, move_to_folder):
     new_folder_helper = FolderUtils(from_folder, move_to_folder)
     # 判断移动的文件夹是否为空
-    if not new_folder_helper.is_empty_dir(move_to_folder):
-        showinfo('提示', '输出文件夹请选择空文件夹!')
-        return
+    # if not new_folder_helper.is_empty_dir(move_to_folder):
+    #     showinfo('提示', '输出文件夹请选择空文件夹!')
+    #     return
     threading.Thread(target=thread_t, args=(new_folder_helper,), daemon=True).start()
     from_btn['state'] = 'disabled'
     to_btn['state'] = 'disabled'
