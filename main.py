@@ -21,37 +21,52 @@ def thread_t(folder_helper: FolderUtils):
     finish = 0
 
     for file_path_ in folder_helper.scan_folder(folder_helper.from_root_path):
+        msg = '处理:{} '.format(file_path_)
+        # os.path.join(folder_helper.to_root_path,folder_helper.md5_dic[file_md5][0],photo_name)
+        print(msg)
+        set_status_text(msg)
         finish += 1
         new_image = ImageInfo(file_path_, use_modify_time)
         file_md5, folder_id_by_date, photo_name = new_image.read_info()
-        if file_md5 not in folder_helper.md5_dic:
-            # 创建文件夹
-            FolderUtils.mkdir(
-                os.path.join(folder_helper.to_root_path, folder_helper.dir_map.get(folder_id_by_date, folder_id_by_date)))
-            if use_location_folder_name_var.get():
-                # 根据city重命名文件夹
-                address, city = new_image.get_position_by_api()
-                folder_helper.rename_dir_by_city(folder_id_by_date, city)
-            else:
-                folder_helper.dir_map[folder_id_by_date] = folder_id_by_date
-            # 开始移动文件夹
-            new_file_path = os.path.join(folder_helper.to_root_path, folder_helper.dir_map[folder_id_by_date], photo_name)
-            # 移动文件并显示信息
-            set_status_text(FolderUtils.move_file(file_path_, new_file_path))
-        else:
-            msg = '处理:{} '.format(file_path_)
-            # os.path.join(folder_helper.to_root_path,folder_helper.md5_dic[file_md5][0],photo_name)
-            print(msg)
-            set_status_text(msg)
-        folder_helper.add_photo_info_to_md5(folder_id_by_date, new_image)
+
+        # 获取托定位信息
+        if use_location_folder_name_var.get():
+            new_image.get_position_by_api()
+        if folder_helper.add_photo_info_to_md5(new_image):
+            folder_helper.move_file(new_image)
+        if new_image.city:
+            folder_helper.dir_city_map[new_image.create_time].add(new_image.city)
         loading(finish, file_count)
+    # 重命名文件夹
+    if use_location_folder_name_var.get():
+        folder_helper.rename_dir_by_city()
 
-    print('找到的相同的文件:')
+        #
+        #
+        # if file_md5 not in folder_helper.md5_dic:
+        #     # 创建文件夹
+        #     FolderUtils.mkdir(
+        #         os.path.join(folder_helper.to_root_path, folder_helper.dir_map.get(folder_id_by_date, folder_id_by_date)))
+        #     if use_location_folder_name_var.get():
+        #         # 根据city重命名文件夹
+        #         address, city = new_image.get_position_by_api()
+        #         folder_helper.rename_dir_by_city(folder_id_by_date, city)
+        #     else:
+        #         folder_helper.dir_map[folder_id_by_date] = folder_id_by_date
+        #     # 开始移动文件夹
+        #     new_file_path = os.path.join(folder_helper.to_root_path, folder_helper.dir_map[folder_id_by_date], photo_name)
+        #     # 移动文件并显示信息
+        #     set_status_text(FolderUtils.move_file(file_path_, new_file_path))
+        # else:
+        #     msg = '处理:{} '.format(file_path_)
+        #     # os.path.join(folder_helper.to_root_path,folder_helper.md5_dic[file_md5][0],photo_name)
+        #     print(msg)
+        #     set_status_text(msg)
 
-    for i in folder_helper.the_same_file:
-        folder_id_by_date, photo_name = folder_helper.md5_dic[i[1]]
-        exist_file_path = os.path.join(folder_helper.to_root_path, folder_helper.dir_map[folder_id_by_date], photo_name)
-        msg = '相同文件: {}  =====>  {}'.format(i[0], exist_file_path)
+    # print('找到的相同的文件:')
+    #
+    for i in folder_helper.the_same_images:
+        msg = '相同文件: {}  =====>  {}'.format(i[0].path, i[1].path)
         print(msg)
         set_status_text(msg)
     showinfo('提示', '完成!')

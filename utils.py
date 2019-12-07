@@ -52,25 +52,12 @@ class ImageInfo:
 
 class FolderUtils:
     def __init__(self, from_root_path, to_root_path):
-        self.dir_map = {}
+        self.dir_city_map = {}
         self.md5_dic = {}
-        self.the_same_file = []
+        self.the_same_images = []
         self.photo_count = 0
         self.from_root_path = from_root_path
         self.to_root_path = to_root_path
-
-    @staticmethod
-    def move_file(file_path, new_file_path):
-        try:
-            shutil.copyfile(file_path, new_file_path)  # 复制文件
-            shutil.copystat(file_path, new_file_path)  # 复制信息
-            if 'None' in new_file_path:
-                print()
-            print("copy %s -> %s" % (file_path, new_file_path))
-            return "copy %s -> %s" % (file_path, new_file_path)
-        except:
-            print('处理失败：copy %s -> %s' % (file_path, new_file_path))
-            print(traceback.format_exc())
 
     @staticmethod
     def scan_folder(folder_path):
@@ -87,15 +74,16 @@ class FolderUtils:
     def count_for_deal_with_photos(self):
         for i in self.scan_folder(self.from_root_path): self.photo_count += 1
 
-    def add_photo_info_to_md5(self, folder_by_date_path, img_obj: ImageInfo):
+    def add_photo_info_to_md5(self, img_obj: ImageInfo):
         if img_obj.md5_code not in self.md5_dic:
-            self.md5_dic[img_obj.md5_code] = [folder_by_date_path, img_obj.photo_name]
+            self.md5_dic[img_obj.md5_code] = img_obj
+            return True
         else:
-            self.the_same_file.append([img_obj.path, img_obj.md5_code])
+            self.the_same_images.append([img_obj, self.md5_dic[img_obj.md5_code]])
+            return False
 
     def scan_exist_photos(self, use_modify_time):
         # 统计目标文件夹已经存在的图片信息
-        exist_folders = []
         pattern = re.compile(r'^[0-9]{6}.*?')
         for file_path, sub_dirs, filenames in os.walk(self.to_root_path):
             for folder_ in sub_dirs:
@@ -105,13 +93,13 @@ class FolderUtils:
                 if not result:
                     continue
                 else:
-                    self.dir_map[result[0]] = os.path.join(self.to_root_path, folder_)
-                    exist_folders.append(self.dir_map[result[0]])
-                    for photo_path in self.scan_folder(self.dir_map[result[0]]):
+                    self.dir_city_map[result[0]] = set(folder_.split('-')[1:])
+                    for photo_path in self.scan_folder(os.path.join(file_path, folder_)):
                         new_image = ImageInfo(photo_path, use_modify_time)
                         new_image.read_info()
-                        self.add_photo_info_to_md5(os.path.split(os.path.dirname(photo_path))[-1].split('-')[0],
-                                                   new_image)
+                        if new_image.city:
+                            self.dir_city_map[result[0]].add(new_image.city)
+                        self.add_photo_info_to_md5(new_image)
 
     @staticmethod
     def is_empty_dir(dir_path):
@@ -124,24 +112,15 @@ class FolderUtils:
     def rename_dir(old_name, new_name):
         os.rename(old_name, new_name)
 
-    def rename_dir_by_city(self, month_dir_name, city):
-        temp_folder_name = self.dir_map.get(month_dir_name)
-        cities = [month_dir_name]
-        # 根据city重命名文件夹
-        if not temp_folder_name:
-            temp_folder_name = month_dir_name
-        else:
-            cities = temp_folder_name.split('-')
-        if city and city not in cities:
-            cities.append(city)
-        ##### 结束 #####
-        new_folder_name = '-'.join(cities)
-        self.dir_map[month_dir_name] = new_folder_name
-        FolderUtils.rename_dir(os.path.join(self.to_root_path, temp_folder_name),
-                               os.path.join(self.to_root_path, new_folder_name))
+    def rename_dir_by_city(self):
+        for date_folder, cities in self.dir_city_map.items():
+            if cities:
+                old_folder_path = os.path.join(self.to_root_path, date_folder)
+                new_folder_path = os.path.join(self.to_root_path, '-'.join([date_folder, *cities]))
+                FolderUtils.rename_dir(old_folder_path, new_folder_path)
+                print('重命名文件夹 {} --> {}'.format(old_folder_path, new_folder_path))
 
-    @staticmethod
-    def mkdir(folder_path):
+    def mkdir(self, folder_path):
         # 去除首位空格
         path = folder_path.strip()
         # 去除尾部 \ 符号
@@ -153,11 +132,30 @@ class FolderUtils:
             # 如果不存在则创建目录
             os.makedirs(path)
             # print(path + ' 创建成功')
+            self.dir_city_map[os.path.split(folder_path)[-1]] = set()
             return True
         else:
             # 如果目录存在则不创建，并提示目录已存在
             # print(path + ' 目录已存在')
             return False
+
+    def move_file(self, image_obj: ImageInfo):
+        old_path = image_obj.path
+        date_folder_path = os.path.join(self.to_root_path, image_obj.create_time)
+        new_path = os.path.join(date_folder_path, image_obj.photo_name)
+        # 先创建文件夹
+        self.mkdir(date_folder_path)
+        try:
+            shutil.copyfile(old_path, new_path)  # 复制文件
+            shutil.copystat(old_path, new_path)  # 复制信息
+            if 'None' in new_path:
+                print()
+            print("copy %s -> %s" % (old_path, new_path))
+            image_obj.path = new_path
+            return "copy %s -> %s" % (old_path, new_path)
+        except:
+            print('处理失败：copy %s -> %s' % (old_path, new_path))
+            print(traceback.format_exc())
 
 
 if __name__ == '__main__':
